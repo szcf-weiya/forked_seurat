@@ -1593,15 +1593,27 @@ DiffTTest <- function(
     yes = pbsapply,
     no = future_sapply
   )
-  p_val <- unlist(
+  p_vals <- unlist(
     x = my.sapply(
       X = 1:nrow(data.use),
       FUN = function(x) {
-        t.test(x = data.use[x, cells.1], y = data.use[x, cells.2])$p.value
+        #t.test(x = data.use[x, cells.1], y = data.use[x, cells.2])$p.value
+        t.test(x = data.use[x, cells.1], y = data.use[x, cells.2])[c("p.value", "statistic")]
       }
     )
   )
-  to.return <- data.frame(p_val,row.names = rownames(x = data.use))
+  p_val = p_vals[seq(1, length(p_vals), by = 2)]
+  tstat = p_vals[seq(2, length(p_vals), by = 2)]
+  # tstat <- unlist(
+  #   x = my.sapply(
+  #     X = 1:nrow(data.use),
+  #     FUN = function(x) {
+  #       t.test(x = data.use[x, cells.1], y = data.use[x, cells.2])$statistic
+  #     }
+  #   )
+  # )
+  
+  to.return <- data.frame(p_val, tstat, row.names = rownames(x = data.use))
   return(to.return)
 }
 
