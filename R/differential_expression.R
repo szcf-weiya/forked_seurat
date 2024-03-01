@@ -1676,7 +1676,7 @@ GLMDETest <- function(
     yes = pbsapply,
     no = future_sapply
   )
-  p_val <- unlist(
+  p_vals <- unlist(
     x = my.sapply(
       X = 1:nrow(data.use),
       FUN = function(x) {
@@ -1691,7 +1691,7 @@ GLMDETest <- function(
             min.cells,
             " cells in both clusters."
           ))
-          return(2)
+          return(c(2, 0))
         }
         # check that variance between groups is not 0
         if (var(x = latent.vars$GENE) == 0) {
@@ -1700,18 +1700,18 @@ GLMDETest <- function(
             x,
             ". No variance in expression between the two clusters."
           ))
-          return(2)
+          return(c(2, 0))
         }
         fmla <- as.formula(object = paste(
           "GENE ~",
           paste(latent.var.names, collapse = "+")
         ))
-        p.estimate <- 2
+        p.estimate <- c(2, 0)
         if (test.use == "negbinom") {
           try(
             expr = p.estimate <- summary(
               object = glm.nb(formula = fmla, data = latent.vars)
-            )$coef[2, 4],
+            )$coef[2, c(4, 3)],
             silent = TRUE
           )
           return(p.estimate)
@@ -1720,17 +1720,21 @@ GLMDETest <- function(
             formula = fmla,
             data = latent.vars,
             family = "poisson"
-          ))$coef[2,4])
+          ))$coef[2, c(4, 3)])
         }
       }
     )
   )
+  p_val = p_vals[seq(1, length(p_vals), by = 2)]
+  tstat = p_vals[seq(2, length(p_vals), by = 2)]
   features.keep <- rownames(data.use)
   if (length(x = which(x = p_val == 2)) > 0) {
     features.keep <- features.keep[-which(x = p_val == 2)]
-    p_val <- p_val[!p_val == 2]
+    idx.keep = !p_val == 2
+    p_val <- p_val[idx.keep]
+    tstat = tstat[idx.keep]
   }
-  to.return <- data.frame(p_val, row.names = features.keep)
+  to.return <- data.frame(p_val, tstat, row.names = features.keep)
   return(to.return)
 }
 
@@ -2425,12 +2429,13 @@ WilcoxDETest <- function(
     yes = FALSE,
     no = TRUE
   )
-  limma.check <- PackageCheck("limma", error = FALSE)
+  limma.check <- TRUE # PackageCheck("limma", error = FALSE)
   if (limma.check[1] && overflow.check) {
-    p_val <- my.sapply(
+    p_vals <- my.sapply(
       X = 1:nrow(x = data.use),
       FUN = function(x) {
-        return(min(2 * min(limma::rankSumTestWithCorrelation(index = j, statistics = data.use[x, ])), 1))
+	res = rankSumTestWithCorrelation(index = j, statistics = data.use[x, ])
+	return(c(min(2 * min(res[1:2]), 1), mean(res[3:4]) ))
       }
     )
   } else {
@@ -2453,12 +2458,54 @@ WilcoxDETest <- function(
     group.info[cells.2, "group"] <- "Group2"
     group.info[, "group"] <- factor(x = group.info[, "group"])
     data.use <- data.use[, rownames(x = group.info), drop = FALSE]
-    p_val <- my.sapply(
+    p_vals <- my.sapply(
       X = 1:nrow(x = data.use),
-      FUN = function(x) {
-        return(wilcox.test(data.use[x, ] ~ group.info[, "group"], ...)$p.value)
+      FUN = function(x) {i
+        res = wilcox.test(data.use[x, ] ~ group.info[, "group"], conf.int = T, ...)
+      	# non-exact test, so go back to pnorm and assume two.sided test
+      	return(c(res$p.value, abs(qnorm(res$p.value/2)) * sign(res$estimate) ))
       }
     )
   }
-  return(data.frame(p_val, row.names = rownames(x = data.use)))
+  p_val = p_vals[seq(1, length(p_vals), by = 2)]
+  tstat = p_vals[seq(2, length(p_vals), by = 2)]
+  return(data.frame(p_val, tstat, row.names = rownames(x = data.use)))
+}
+
+rankSumTestWithCorrelation <- function(index,statistics,correlation=0,df=Inf)
+#	Rank sum test as for two-sample Wilcoxon-Mann-Whitney test,
+#	but allowing for correlation between members of test set.
+#	Gordon Smyth and Di Wu
+#	Created 2007.  Last modified 24 Feb 2012.
+#
+#	adapted from limma package 
+{
+	n <- length(statistics)
+	r <- rank(statistics)
+	r1 <- r[index]
+	n1 <- length(r1)
+	n2 <- n-n1
+	U <- n1*n2 + n1*(n1+1)/2 - sum(r1)
+	mu <- n1*n2/2
+
+	if(correlation==0 || n1==1) {
+		sigma2 <- n1*n2*(n+1)/12
+	} else {
+		sigma2 <- asin(1)*n1*n2 + asin(0.5)*n1*n2*(n2-1) + asin(correlation/2)*n1*(n1-1)*n2*(n2-1) + asin((correlation+1)/2)*n1*(n1-1)*n2
+		sigma2 <- sigma2/2/pi
+	}
+
+	TIES <- (length(r) != length(unique(r)))
+	if(TIES) {
+		NTIES <- table(r)
+		adjustment <- sum(NTIES*(NTIES+1)*(NTIES-1)) / (n*(n+1)*(n-1))
+		sigma2 <- sigma2 * (1 - adjustment)
+	}
+	zlowertail <- (U+0.5-mu)/sqrt(sigma2)
+	zuppertail <- (U-0.5-mu)/sqrt(sigma2)
+
+#	Lower and upper tails are reversed on output
+#	because R's ranks are the reverse of Mann-Whitney's ranks
+	pvalues <- c(less=pt(zuppertail,df=df,lower.tail=FALSE), greater=pt(zlowertail,df=df), zuppertail, zlowertail)
+	pvalues
 }
