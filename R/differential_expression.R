@@ -2460,7 +2460,7 @@ WilcoxDETest <- function(
     data.use <- data.use[, rownames(x = group.info), drop = FALSE]
     p_vals <- my.sapply(
       X = 1:nrow(x = data.use),
-      FUN = function(x) {i
+      FUN = function(x) {
         res = wilcox.test(data.use[x, ] ~ group.info[, "group"], conf.int = T, ...)
       	# non-exact test, so go back to pnorm and assume two.sided test
       	return(c(res$p.value, abs(qnorm(res$p.value/2)) * sign(res$estimate) ))
